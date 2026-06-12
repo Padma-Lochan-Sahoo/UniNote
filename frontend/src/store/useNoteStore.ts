@@ -32,9 +32,20 @@ interface NoteStore {
   semesters: number[];
   subjects: string[];
   stats: Stats | null;
-  isLoading: boolean;
+
+  // Granular loading flags — prevents spinner conflicts and stale flash
+  isLoading: boolean;       // alias for loadingNotes (backward compat)
+  loadingNotes: boolean;
+  loadingSubjects: boolean;
   isUploading: boolean;
 
+  // ── Clear helpers ─────────────────────────────────────────────────────────
+  // Call these in useEffect cleanup to prevent stale data flashing on navigation
+  clearSubjects: () => void;
+  clearNotes: () => void;
+  clearSemesters: () => void;
+
+  // ── Fetchers ──────────────────────────────────────────────────────────────
   fetchCourses: () => Promise<void>;
   fetchSemesters: (course: string) => Promise<void>;
   fetchSubjects: (course: string, semester: number) => Promise<void>;
@@ -48,16 +59,28 @@ interface NoteStore {
   fetchStats: () => Promise<void>;
 }
 
-export const useNoteStore = create<NoteStore>((set, get) => ({
+export const useNoteStore = create<NoteStore>((set) => ({
   notes: [],
   courses: [],
   semesters: [],
   subjects: [],
   stats: null,
+
   isLoading: false,
+  loadingNotes: false,
+  loadingSubjects: false,
   isUploading: false,
 
+  // ── Clear helpers ─────────────────────────────────────────────────────────
+  clearSubjects:  () => set({ subjects: [] }),
+  clearNotes:     () => set({ notes: [] }),
+  clearSemesters: () => set({ semesters: [] }),
+
+  // ── Fetchers ──────────────────────────────────────────────────────────────
+
   fetchCourses: async () => {
+    // Dashboard no longer calls this — courses come from courseConfig.
+    // Kept for AdminPanel stats and any future use.
     try {
       const res = await axios.get("/notes/courses");
       set({ courses: res.data });
@@ -65,33 +88,46 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   fetchSemesters: async (course) => {
+    // CourseView no longer calls this — semesters come from courseConfig.
+    // Kept for future use.
+    set({ semesters: [] });
     try {
       const res = await axios.get(`/notes/${course}/semesters`);
       set({ semesters: res.data });
-    } catch { /* silent */ }
+    } catch { set({ semesters: [] }); }
   },
 
   fetchSubjects: async (course, semester) => {
+    // ★ Clear immediately — prevents the previous semester's subjects from
+    //   showing for several seconds while the new fetch is in-flight.
+    set({ subjects: [], loadingSubjects: true });
     try {
       const res = await axios.get(`/notes/${course}/${semester}/subjects`);
       set({ subjects: res.data });
-    } catch { /* silent */ }
+    } catch {
+      set({ subjects: [] });
+    } finally {
+      set({ loadingSubjects: false });
+    }
   },
 
   fetchNotesBySubject: async (course, semester, subject) => {
-    set({ isLoading: true });
+    // ★ Clear immediately — prevents previous subject's notes from flashing.
+    set({ notes: [], loadingNotes: true, isLoading: true });
     try {
-      const res = await axios.get(`/notes/${course}/${semester}/${subject}`);
+      const res = await axios.get(
+        `/notes/${course}/${semester}/${encodeURIComponent(subject)}`
+      );
       set({ notes: res.data });
     } catch {
       set({ notes: [] });
     } finally {
-      set({ isLoading: false });
+      set({ loadingNotes: false, isLoading: false });
     }
   },
 
   fetchAllNotes: async (filters = {}) => {
-    set({ isLoading: true });
+    set({ loadingNotes: true, isLoading: true });
     try {
       const params = new URLSearchParams(filters).toString();
       const res = await axios.get(`/notes${params ? "?" + params : ""}`);
@@ -99,7 +135,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     } catch {
       set({ notes: [] });
     } finally {
-      set({ isLoading: false });
+      set({ loadingNotes: false, isLoading: false });
     }
   },
 

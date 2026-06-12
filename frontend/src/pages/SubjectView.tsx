@@ -9,14 +9,22 @@ import { useNoteStore } from "@/store/useNoteStore";
 import { getCourse } from "@/lib/courseConfig";
 
 export default function SubjectView() {
-  const { course, semester, subject } = useParams<{ course: string; semester: string; subject: string }>();
-  const { notes, fetchNotesBySubject, isLoading } = useNoteStore();
+  const { course, semester, subject } = useParams<{
+    course: string;
+    semester: string;
+    subject: string;
+  }>();
+
+  const { notes, fetchNotesBySubject, clearNotes, loadingNotes } = useNoteStore();
   const meta = getCourse(course ?? "");
   const decodedSubject = subject ? decodeURIComponent(subject) : "";
 
   useEffect(() => {
     if (course && semester && subject)
       fetchNotesBySubject(course, Number(semester), decodedSubject);
+
+    // ★ Clear on unmount so the next SubjectView never flashes stale notes
+    return () => clearNotes();
   }, [course, semester, subject]);
 
   return (
@@ -34,7 +42,7 @@ export default function SubjectView() {
           ]}
         />
 
-        {isLoading ? (
+        {loadingNotes ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-7 h-7 animate-spin text-primary" />
           </div>
@@ -46,10 +54,16 @@ export default function SubjectView() {
           />
         ) : (
           <>
-            <p className="label-mono mb-5 text-[11px]">{notes.length} note{notes.length !== 1 ? "s" : ""} found</p>
+            <p className="label-mono mb-5 text-[11px]">
+              {notes.length} note{notes.length !== 1 ? "s" : ""} found
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {notes.map((note, i) => (
-                <div key={note._id} className="animate-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
+                <div
+                  key={note._id}
+                  className="animate-fade-up"
+                  style={{ animationDelay: `${i * 60}ms` }}
+                >
                   <NoteCard note={note} />
                 </div>
               ))}
